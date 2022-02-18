@@ -1,23 +1,9 @@
-import { PayloadAction } from '@reduxjs/toolkit'
-import axios, { CancelTokenSource } from 'axios'
-import { SagaIterator } from 'redux-saga'
-import {
-  call,
-  cancel,
-  cancelled,
-  put,
-  race,
-  select,
-  take,
-  takeEvery,
-} from 'redux-saga/effects'
+import axios from 'axios'
 import { expectSaga } from 'redux-saga-test-plan'
 import * as matchers from 'redux-saga-test-plan/matchers'
 import { StaticProvider, throwError } from 'redux-saga-test-plan/providers'
 
-import { HoldReservation } from '../../../../../shared/types'
 import { showToast } from '../../toast/redux/toastSlice'
-import { ToastOptions } from '../../toast/types'
 import {
   cancelPurchaseServerCall,
   releaseServerCall,
@@ -26,9 +12,6 @@ import {
 import { TicketAction } from '../types'
 import {
   endTransaction,
-  holdTickets,
-  PurchasePayload,
-  ReleasePayload,
   resetTransaction,
   selectors,
   startTicketAbort,
@@ -132,4 +115,83 @@ describe('purchase flow', () => {
       .call(cancelTransaction, holdReservation)
       .run()
   })
+
+  test('abort purchase while call to server is running', () => {
+    const cancelSource = axios.CancelToken.source()
+    return (
+      expectSaga(purchaseTickets, purchasePayload, cancelSource)
+        .provide([
+          ...networkProviders,
+          {
+            race: () => ({ abort: true }),
+          },
+        ])
+        //handle race so abort wins
+        .call(cancelSource.cancel)
+        .call(cancelPurchaseServerCall, purchaseReservation)
+        .put(showToast({ title: 'purchase canceled', status: 'warning' }))
+        .call(cancelTransaction, holdReservation)
+        .not.put(showToast({ title: 'tickets purchased', status: 'success' }))
+        .run()
+    )
+  })
+
+  test('Purchase runs successfully', () => {
+    const cancelSource = axios.CancelToken.source()
+    return expectSaga(purchaseTickets, purchasePayload, cancelSource)
+      .provide(networkProviders)
+      .call(reserveTicketServerCall, purchaseReservation, cancelSource.token)
+      .put(showToast({ title: 'tickets purchased', status: 'success' }))
+      .put(endTransaction())
+      .not.call.fn(cancelTransaction)
+      .not.call.fn(cancelPurchaseServerCall)
+      .not.put(showToast({ title: 'purchase canceled', status: 'warning' }))
+      .run()
+  })
+})
+
+describe('cancellation flow', () => {
+  test.each([
+    { name: 'cancel', actionCreator: startTicketRelease },
+    { name: 'abort', actionCreator: startTicketAbort },
+  ])('Abort event', ({ actionCreator }) => {
+    return expectSaga(ticketFlow, holdAction)
+      .provide(networkProviders)
+      .dispatch(
+        actionCreator({
+          reservation: holdReservation,
+          reason: 'test',
+        }),
+      )
+      .put(showToast({ title: 'test', status: 'warning' }))
+      .call(cancelTransaction, holdReservation)
+      .run()
+  })
+  //   test('Abort event', () => {
+  //     return expectSaga(ticketFlow, holdAction)
+  //       .provide(networkProviders)
+  //       .dispatch(
+  //         startTicketAbort({
+  //           reservation: holdReservation,
+  //           reason: 'test',
+  //         }),
+  //       )
+  //       .put(showToast({ title: 'test', status: 'warning' }))
+  //       .call(cancelTransaction, holdReservation)
+  //       .run()
+  //   })
+
+  //   test('Release event', () => {
+  //     return expectSaga(ticketFlow, holdAction)
+  //       .provide(networkProviders)
+  //       .dispatch(
+  //         startTicketRelease({
+  //           reservation: holdReservation,
+  //           reason: 'test',
+  //         }),
+  //       )
+  //       .put(showToast({ title: 'test', status: 'warning' }))
+  //       .call(cancelTransaction, holdReservation)
+  //       .run()
+  //   })
 })

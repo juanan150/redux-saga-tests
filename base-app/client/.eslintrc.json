@@ -20,7 +20,6 @@
     "ecmaFeatures": {
       "jsx": true
     },
-    "parser": "@typescript-eslint/parser",
     "project": "tsconfig.json"
   },
   "plugins": [
