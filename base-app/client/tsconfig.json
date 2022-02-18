@@ -16,5 +16,6 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src", "../../shared/types"]
+  "include": ["src", "../../shared/types"],
+  "types": ["node", "jest", "@testing-library/jest-dom"]
 }
